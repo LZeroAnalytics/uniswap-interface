@@ -9,6 +9,7 @@ import { TokenList } from '@uniswap/token-lists';
 import Image, { ImageLoader } from 'next/image';
 import { ethers } from 'ethers';
 import DEFAULT_TOKEN_LIST_JSON from './tokenList.json';
+import TokenSelector from "@/components/TokenSelector";
 
 const DEFAULT_TOKEN_LIST = DEFAULT_TOKEN_LIST_JSON as TokenList;
 
@@ -176,11 +177,11 @@ const SwapInterface = () => {
                     let balance;
                     if (fromToken.symbol.toUpperCase() === 'ETH') {
                         balance = await provider.getBalance(walletAddress);
-                        setFromBalance(parseFloat(ethers.utils.formatEther(balance)).toFixed(4));
+                        setFromBalance(parseFloat(ethers.utils.formatEther(balance)).toFixed(2));
                     } else {
                         const tokenContract = new ethers.Contract(fromToken.address, erc20Abi, provider);
                         balance = await tokenContract.balanceOf(walletAddress);
-                        setFromBalance(parseFloat(ethers.utils.formatUnits(balance, fromToken.decimals)).toFixed(4));
+                        setFromBalance(parseFloat(ethers.utils.formatUnits(balance, fromToken.decimals)).toFixed(2));
                     }
                 } catch (error) {
                     console.error(error);
@@ -199,11 +200,11 @@ const SwapInterface = () => {
                     let balance;
                     if (toToken.symbol.toUpperCase() === 'ETH') {
                         balance = await provider.getBalance(walletAddress);
-                        setToBalance(parseFloat(ethers.utils.formatEther(balance)).toFixed(4));
+                        setToBalance(parseFloat(ethers.utils.formatEther(balance)).toFixed(2));
                     } else {
                         const tokenContract = new ethers.Contract(toToken.address, erc20Abi, provider);
                         balance = await tokenContract.balanceOf(walletAddress);
-                        setToBalance(parseFloat(ethers.utils.formatUnits(balance, toToken.decimals)).toFixed(4));
+                        setToBalance(parseFloat(ethers.utils.formatUnits(balance, toToken.decimals)).toFixed(2));
                     }
                 } catch (error) {
                     console.error(error);
@@ -247,62 +248,6 @@ const SwapInterface = () => {
             };
         }
     }, [provider]);
-
-    // Inline TokenSelector component with balance display
-    const TokenSelector = ({
-                               value,
-                               onChange,
-                               token,
-                               onTokenSelect,
-                               balance,
-                           }: {
-        value: string;
-        onChange: (value: string) => void;
-        token?: Token;
-        onTokenSelect: () => void;
-        balance?: string;
-    }) => (
-        <div>
-            <div className="flex items-center justify-between w-full p-4 bg-gray-100 rounded-lg">
-                <input
-                    type="number"
-                    placeholder="0.0"
-                    className="w-1/2 bg-transparent text-2xl outline-none"
-                    value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                />
-                <Button
-                    variant="outline"
-                    className="flex items-center gap-2 px-4 py-2"
-                    onClick={onTokenSelect}
-                >
-                    {token ? (
-                        <>
-                            <div className="w-6 h-6 relative">
-                                <Image
-                                    loader={myLoader}
-                                    src={token.logoURI}
-                                    alt={token.symbol}
-                                    width={24}
-                                    height={24}
-                                    className="rounded-full"
-                                />
-                            </div>
-                            {token.symbol}
-                        </>
-                    ) : (
-                        'Select token'
-                    )}
-                    <ChevronDown size={20} />
-                </Button>
-            </div>
-            {balance && (
-                <div className="text-sm text-gray-500 mt-1">
-                    Balance: {balance}
-                </div>
-            )}
-        </div>
-    );
 
     return (
         <div className="w-full max-w-lg mx-auto">
