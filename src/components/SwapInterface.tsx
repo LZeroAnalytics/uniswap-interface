@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Settings, ChevronDown, Wallet, ArrowDownUp, X, Search } from 'lucide-react';
+import { Settings, Wallet, ArrowDownUp, X, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -9,11 +9,12 @@ import { TokenList } from '@uniswap/token-lists';
 import Image, { ImageLoader } from 'next/image';
 import { ethers } from 'ethers';
 import DEFAULT_TOKEN_LIST_JSON from './tokenList.json';
-import TokenSelector from "@/components/TokenSelector";
+import TokenSelector from '@/components/TokenSelector';
+import {SWAP_ROUTER_ADDRESS} from "@/lib/uniswapTrade";
 
 const DEFAULT_TOKEN_LIST = DEFAULT_TOKEN_LIST_JSON as TokenList;
 
-interface Token {
+export interface Token {
     chainId: number;
     address: string;
     name: string;
@@ -32,7 +33,6 @@ interface TokenSelectorModalProps {
 
 const myLoader: ImageLoader = ({ src, width, quality }) => {
     if (src.startsWith('ipfs://')) {
-        // Convert ipfs:// to an HTTP gateway URL
         src = src.replace('ipfs://', 'https://ipfs.io/ipfs/');
     }
     return `${src}?w=${width}&q=${quality || 75}`;
@@ -67,7 +67,10 @@ const TokenSelectorModal = ({
                 </div>
 
                 <div className="relative mb-4">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <Search
+                        className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                        size={20}
+                    />
                     <input
                         type="text"
                         placeholder="Search by name or paste address"
@@ -128,7 +131,22 @@ const SwapInterface = () => {
     const [fromBalance, setFromBalance] = useState<string>('');
     const [toBalance, setToBalance] = useState<string>('');
 
-    const tokens = DEFAULT_TOKEN_LIST.tokens.filter(token => token.chainId === 1); // Only showing Ethereum tokens
+    // Quote state (output amount from the quoter)
+    const [quoteData, setQuoteData] = useState<string | null>(null);
+    const [isQuoteLoading, setIsQuoteLoading] = useState(false);
+    const [isSwapping, setIsSwapping] = useState(false);
+
+    const tokens: Token[] = DEFAULT_TOKEN_LIST.tokens
+        .filter((token) => token.chainId === 1)
+        .map((token) => ({
+            chainId: token.chainId,
+            address: token.address,
+            name: token.name,
+            symbol: token.symbol,
+            decimals: token.decimals,
+            // Provide a default empty string if logoURI is missing
+            logoURI: token.logoURI ?? "",
+        }));
 
     const shortenAddress = (address: string) =>
         address.slice(0, 6) + '...' + address.slice(-4);
@@ -136,20 +154,20 @@ const SwapInterface = () => {
     const handleWalletConnect = async () => {
         if ((window as any).ethereum) {
             try {
-                const ethProvider = new ethers.providers.Web3Provider((window as any).ethereum);
+                const ethProvider = new ethers.providers.Web3Provider(
+                    (window as any).ethereum
+                );
                 await ethProvider.send('eth_requestAccounts', []);
                 const signer = ethProvider.getSigner();
                 const address = await signer.getAddress();
                 setWalletAddress(address);
                 setProvider(ethProvider);
                 const network = await ethProvider.getNetwork();
-                console.log("Eth Provider", ethProvider);
-                if (network.chainId === 3151908) {
-                    setNetworkName('LZero');
+                if (network.name === "unknown") {
+                    setNetworkName("LZero");
                 } else {
                     setNetworkName(network.name);
                 }
-
                 setIsWalletConnected(true);
             } catch (error) {
                 console.error('Wallet connection error:', error);
@@ -159,17 +177,51 @@ const SwapInterface = () => {
         }
     };
 
-    const handleSwap = () => {
-        if (!isWalletConnected) {
-            handleWalletConnect();
+    // Whenever fromToken, toToken, and fromAmount are set, update the quote
+    useEffect(() => {
+        async function fetchQuote() {
+            if (fromToken && toToken && fromAmount && provider) {
+                try {
+                    setIsQuoteLoading(true);
+                    // Convert fromAmount to smallest unit (raw value)
+                    const amountInRaw = ethers.utils
+                        .parseUnits(fromAmount, fromToken.decimals)
+                        .toString();
+
+                    // Call our backend API (which uses getQuoteExactInputSingle and getSwapRoute)
+                    const response = await fetch('/api/swap', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            tokenIn: fromToken,
+                            tokenOut: toToken,
+                            amountIn: amountInRaw,
+                            walletAddress,
+                        }),
+                    });
+                    if (!response.ok) {
+                        throw new Error('API error while fetching swap route');
+                    }
+                    const data = await response.json();
+                    // data.quote is the quoted output (in smallest unit) and data.route contains calldata & value.
+                    setQuoteData(data.quote);
+                    // Optionally update the toAmount for display:
+                    setToAmount(data.quote);
+                } catch (error) {
+                    console.error('Error fetching quote from API:', error);
+                    setQuoteData(null);
+                } finally {
+                    setIsQuoteLoading(false);
+                }
+            } else {
+                setQuoteData(null);
+            }
         }
-        // Swap logic would go here
-    };
+        const timer = setTimeout(fetchQuote, 500);
+        return () => clearTimeout(timer);
+    }, [fromToken, toToken, fromAmount, provider, walletAddress]);
 
-    // A minimal ERC-20 ABI for balanceOf
-    const erc20Abi = ['function balanceOf(address owner) view returns (uint256)'];
-
-    // Fetch balance for fromToken when it or the wallet/provider changes
+    // Fetch token balances (unchanged)
     useEffect(() => {
         const fetchFromBalance = async () => {
             if (provider && walletAddress && fromToken) {
@@ -177,11 +229,21 @@ const SwapInterface = () => {
                     let balance;
                     if (fromToken.symbol.toUpperCase() === 'ETH') {
                         balance = await provider.getBalance(walletAddress);
-                        setFromBalance(parseFloat(ethers.utils.formatEther(balance)).toFixed(2));
+                        setFromBalance(
+                            parseFloat(ethers.utils.formatEther(balance)).toFixed(2)
+                        );
                     } else {
-                        const tokenContract = new ethers.Contract(fromToken.address, erc20Abi, provider);
+                        const tokenContract = new ethers.Contract(
+                            fromToken.address,
+                            ['function balanceOf(address owner) view returns (uint256)'],
+                            provider
+                        );
                         balance = await tokenContract.balanceOf(walletAddress);
-                        setFromBalance(parseFloat(ethers.utils.formatUnits(balance, fromToken.decimals)).toFixed(2));
+                        setFromBalance(
+                            parseFloat(
+                                ethers.utils.formatUnits(balance, fromToken.decimals)
+                            ).toFixed(2)
+                        );
                     }
                 } catch (error) {
                     console.error(error);
@@ -192,7 +254,6 @@ const SwapInterface = () => {
         fetchFromBalance();
     }, [provider, walletAddress, fromToken]);
 
-    // Fetch balance for toToken when it or the wallet/provider changes
     useEffect(() => {
         const fetchToBalance = async () => {
             if (provider && walletAddress && toToken) {
@@ -200,11 +261,21 @@ const SwapInterface = () => {
                     let balance;
                     if (toToken.symbol.toUpperCase() === 'ETH') {
                         balance = await provider.getBalance(walletAddress);
-                        setToBalance(parseFloat(ethers.utils.formatEther(balance)).toFixed(2));
+                        setToBalance(
+                            parseFloat(ethers.utils.formatEther(balance)).toFixed(2)
+                        );
                     } else {
-                        const tokenContract = new ethers.Contract(toToken.address, erc20Abi, provider);
+                        const tokenContract = new ethers.Contract(
+                            toToken.address,
+                            ['function balanceOf(address owner) view returns (uint256)'],
+                            provider
+                        );
                         balance = await tokenContract.balanceOf(walletAddress);
-                        setToBalance(parseFloat(ethers.utils.formatUnits(balance, toToken.decimals)).toFixed(2));
+                        setToBalance(
+                            parseFloat(
+                                ethers.utils.formatUnits(balance, toToken.decimals)
+                            ).toFixed(2)
+                        );
                     }
                 } catch (error) {
                     console.error(error);
@@ -215,23 +286,21 @@ const SwapInterface = () => {
         fetchToBalance();
     }, [provider, walletAddress, toToken]);
 
+    // Listen for account and chain changes (unchanged)
     useEffect(() => {
         if ((window as any).ethereum) {
             const ethereum = (window as any).ethereum;
 
             const handleAccountsChanged = (accounts: string[]) => {
                 if (accounts.length === 0) {
-                    // Wallet is disconnected
                     setIsWalletConnected(false);
                     setWalletAddress(null);
-                    // Optionally reset other related state
                 } else {
                     setWalletAddress(accounts[0]);
                 }
             };
 
             const handleChainChanged = (chainId: string) => {
-                // When the network changes, you might want to update your provider and network state.
                 if (provider) {
                     provider.getNetwork().then((network) => setNetworkName(network.name));
                 }
@@ -248,6 +317,90 @@ const SwapInterface = () => {
             };
         }
     }, [provider]);
+
+    // Handle Swap: Call our backend API to get the route and then send the transaction
+    const handleSwap = async () => {
+        if (!isWalletConnected) {
+            await handleWalletConnect();
+        }
+        if (!fromToken || !toToken || !fromAmount || !provider || !walletAddress) {
+            console.error('Missing swap parameters');
+            return;
+        }
+
+        setIsSwapping(true);
+        try {
+            // Convert fromAmount to raw units
+            const amountInRaw = ethers.utils
+                .parseUnits(fromAmount, fromToken.decimals)
+                .toString();
+
+            // Fetch the swap route (and quote) from our API route
+            const response = await fetch('/api/swap', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tokenIn: fromToken,
+                    tokenOut: toToken,
+                    amountIn: amountInRaw,
+                    walletAddress,
+                }),
+            });
+            if (!response.ok) {
+                throw new Error('API error while fetching swap route');
+            }
+            const data = await response.json();
+            if (!data.route) {
+                console.error('No valid route returned');
+                return;
+            }
+            console.log('Received route:', data.route);
+
+            const signer = provider.getSigner();
+            let needsApproval = false;
+            let spenderAddress = data.route.to || '0xE592427A0AEce92De3Edee1F18E0157C05861564';
+
+            if (fromToken.symbol.toUpperCase() !== 'ETH') {
+                const ERC20_ABI = [
+                    'function approve(address spender, uint256 amount) public returns (bool)',
+                    'function allowance(address owner, address spender) external view returns (uint256)'
+                ];
+                const tokenContract = new ethers.Contract(fromToken.address, ERC20_ABI, signer);
+
+                // Read current allowance
+                const currentAllowance: ethers.BigNumber = await tokenContract.allowance(walletAddress, spenderAddress);
+
+                if (currentAllowance.lt(amountInRaw)) {
+                    needsApproval = true;
+                }
+
+                if (needsApproval) {
+                    console.log('Current allowance is insufficient; sending approval...');
+                    const approveTx = await tokenContract.approve(spenderAddress, amountInRaw);
+                    console.log('Approve transaction sent:', approveTx.hash);
+
+                    // Wait for confirmation (optional but recommended)
+                    await approveTx.wait();
+                    console.log('Approve transaction confirmed');
+                }
+            }
+
+            // 3. Build the swap transaction from the returned route
+            const txRequest = {
+                data: data.route.calldata,
+                to: spenderAddress,
+                value: ethers.BigNumber.from(data.route.value),
+            };
+
+            // 4. Send the swap transaction using the connected wallet
+            const txResponse = await signer.sendTransaction(txRequest);
+            console.log('Trade executed, tx hash:', txResponse.hash);
+        } catch (error) {
+            console.error('Swap execution error:', error);
+        }
+
+        setIsSwapping(false);
+    };
 
     return (
         <div className="w-full max-w-lg mx-auto">
@@ -326,18 +479,26 @@ const SwapInterface = () => {
                     <Button
                         className="w-full"
                         disabled={
-                            isWalletConnected &&
-                            (!fromAmount || !toAmount || !fromToken || !toToken)
+                            !isWalletConnected ||
+                            !fromToken ||
+                            !toToken ||
+                            !fromAmount ||
+                            isQuoteLoading ||
+                            isSwapping
                         }
                         onClick={handleSwap}
                     >
                         {!isWalletConnected
                             ? 'Connect Wallet'
-                            : !fromToken || !toToken
-                                ? 'Select tokens'
-                                : !fromAmount || !toAmount
-                                    ? 'Enter an amount'
-                                    : 'Swap'}
+                            : isQuoteLoading
+                                ? 'Loading Quote...'
+                                : !fromToken || !toToken
+                                    ? 'Select tokens'
+                                    : !fromAmount
+                                        ? 'Enter an amount'
+                                        : isSwapping
+                                            ? 'Executing swap...'
+                                            : 'Swap'}
                     </Button>
                 </div>
             </Card>
