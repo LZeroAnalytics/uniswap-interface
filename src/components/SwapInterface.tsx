@@ -116,7 +116,9 @@ const SwapInterface = () => {
   };
 
   const handleSwap = () => {
-    if (!isWalletConnected) return;
+    if (!isWalletConnected) {
+        handleWalletConnect();
+    }
     // Swap logic would go here
   };
 
@@ -231,7 +233,7 @@ const SwapInterface = () => {
 
             <Button
                 className="w-full"
-                disabled={!isWalletConnected || !fromAmount || !toAmount || !fromToken || !toToken}
+                disabled={isWalletConnected && (!fromAmount || !toAmount || !fromToken || !toToken)}
                 onClick={handleSwap}
             >
               {!isWalletConnected
