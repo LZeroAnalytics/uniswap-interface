@@ -10,9 +10,6 @@ import {
 } from '@uniswap/smart-order-router';
 
 const RPC_URL = process.env.RPC_URL;
-if (!RPC_URL) {
-    throw new Error("RPC_URL must be defined in environment variables");
-}
 
 export async function POST(req: NextRequest) {
     try {
@@ -33,7 +30,7 @@ export async function POST(req: NextRequest) {
 
         // Create a provider using your custom or environment RPC
         const provider = new ethers.providers.JsonRpcProvider({
-            url: "https://5dd968c7015a4546a569fd6dcc215b2c-rpc.prod.lzeroanalytics.com",
+            url: RPC_URL as string,
             headers: {
                 Referer: "",
             },
@@ -58,18 +55,17 @@ export async function POST(req: NextRequest) {
             tokenOut.name
         );
 
+        // Convert raw input amount into a CurrencyAmount
+        const amountInCurrency = CurrencyAmount.fromRawAmount(
+            tokenInInstance,
+            amountIn
+        );
 
         // Build an AlphaRouter to compute best route (including multi-hop if needed).
         const router = new AlphaRouter({
             chainId: tokenInInstance.chainId,
             provider,
         });
-
-        // Convert raw input amount into a CurrencyAmount
-        const amountInCurrency = CurrencyAmount.fromRawAmount(
-            tokenInInstance,
-            amountIn
-        );
 
         const deadline = Math.floor(Date.now() / 1000) + 1800; // e.g. 30 mins from now
         const slippage = new Percent(50, 10000); // 0.50%

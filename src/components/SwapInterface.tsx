@@ -135,6 +135,7 @@ const SwapInterface = () => {
     const [quoteData, setQuoteData] = useState<string | null>(null);
     const [isQuoteLoading, setIsQuoteLoading] = useState(false);
     const [isSwapping, setIsSwapping] = useState(false);
+    const [isSwapSuccessful, setSwapSuccessful] = useState(false);
 
     const tokens: Token[] = DEFAULT_TOKEN_LIST.tokens
         .filter((token) => token.chainId === 1)
@@ -183,6 +184,7 @@ const SwapInterface = () => {
             if (fromToken && toToken && fromAmount && provider) {
                 try {
                     setIsQuoteLoading(true);
+                    setSwapSuccessful(false);
                     // Convert fromAmount to smallest unit (raw value)
                     const amountInRaw = ethers.utils
                         .parseUnits(fromAmount, fromToken.decimals)
@@ -395,6 +397,31 @@ const SwapInterface = () => {
             // 4. Send the swap transaction using the connected wallet
             const txResponse = await signer.sendTransaction(txRequest);
             console.log('Trade executed, tx hash:', txResponse.hash);
+            setSwapSuccessful(true);
+
+            const tokenInContract = new ethers.Contract(
+                fromToken.address,
+                ['function balanceOf(address owner) view returns (uint256)'],
+                provider
+            );
+            const tokenOutContract = new ethers.Contract(
+                toToken.address,
+                ['function balanceOf(address owner) view returns (uint256)'],
+                provider
+            );
+            const inBalance = await tokenInContract.balanceOf(walletAddress);
+            const outBalance = await tokenOutContract.balanceOf(walletAddress);
+            setFromBalance(
+                parseFloat(
+                    ethers.utils.formatUnits(inBalance, fromToken.decimals)
+                ).toFixed(2)
+            );
+
+            setToBalance(
+                parseFloat(
+                    ethers.utils.formatUnits(outBalance, toToken.decimals)
+                ).toFixed(2)
+            )
         } catch (error) {
             console.error('Swap execution error:', error);
         }
@@ -498,7 +525,9 @@ const SwapInterface = () => {
                                         ? 'Enter an amount'
                                         : isSwapping
                                             ? 'Executing swap...'
-                                            : 'Swap'}
+                                            : isSwapSuccessful
+                                                ? 'Swap successful'
+                                                : 'Swap'}
                     </Button>
                 </div>
             </Card>
