@@ -432,7 +432,7 @@ const SwapInterface = () => {
     return (
         <div className="w-full max-w-lg mx-auto">
             <div className="flex justify-between items-center mb-4">
-                <h1 className="text-2xl font-bold">LZero Uniswap Demo</h1>
+                <h1 className="text-2xl font-bold">Bloctopus Uniswap Demo</h1>
                 <div className="flex gap-2 items-center">
                     <Button variant="ghost" size="icon">
                         <Settings size={20} />
