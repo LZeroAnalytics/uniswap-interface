@@ -165,7 +165,7 @@ const SwapInterface = () => {
                 setProvider(ethProvider);
                 const network = await ethProvider.getNetwork();
                 if (network.name === "unknown") {
-                    setNetworkName("LZero");
+                    setNetworkName("Bloctopus");
                 } else {
                     setNetworkName(network.name);
                 }
