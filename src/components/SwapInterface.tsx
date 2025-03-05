@@ -215,7 +215,7 @@ const SwapInterface = () => {
                     }
                     const data = await response.json();
 
-                    if (!data.route) {
+                    if (!data.methodParameters) {
                         setFetchError('No valid route found');
                         setQuoteData(null);
                         setSwapRoute(null);
