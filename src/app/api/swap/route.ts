@@ -34,6 +34,10 @@ export async function POST(req: NextRequest) {
             tokenOutChainId: "1",
             amount: amountIn,
             type: "exactIn",
+            deadline: "360",
+            slippageTolerance: "5",
+            algorithm: "alpha",
+            recipient: walletAddress,
         });
 
         // Construct the full URL for the external /quote endpoint.
