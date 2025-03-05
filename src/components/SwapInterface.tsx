@@ -223,9 +223,7 @@ const SwapInterface = () => {
                         setQuoteData(data.quote);
                         setSwapRoute(data.methodParameters);
                         setFetchError(null);
-                        setToAmount(
-                            ethers.utils.formatUnits(data.quote, toToken?.decimals ?? 18)
-                        );
+                        setToAmount(data.quote);
                     }
                 } catch (error) {
                     console.error('Error fetching quote from API:', error);
