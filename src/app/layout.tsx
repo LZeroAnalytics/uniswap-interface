@@ -5,7 +5,7 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-    title: 'DeFi Swap Interface',
+    title: 'Bloctopus Uniswap',
     description: 'A decentralized token swap interface',
 };
 

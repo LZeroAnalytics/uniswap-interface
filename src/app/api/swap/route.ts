@@ -2,24 +2,23 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { ethers } from 'ethers';
-import { Percent, Token, CurrencyAmount, TradeType } from '@uniswap/sdk-core';
-import {
-    AlphaRouter,
-    SwapType,
-    SwapOptionsSwapRouter02,
-} from '@uniswap/smart-order-router';
-
-const RPC_URL = process.env.RPC_URL;
 
 export async function POST(req: NextRequest) {
+    console.log('Request received', req);
     try {
+        const SERVER_URL = process.env.SERVER_URL;
+        console.log('Backend server', SERVER_URL);
+        if (!SERVER_URL) {
+            return NextResponse.json(
+                { error: "SERVER_URL environment variable is missing" },
+                { status: 500 }
+            );
+        }
+
         const body = await req.json();
-        const {
-            tokenIn,
-            tokenOut,
-            amountIn,
-            walletAddress,
-        } = body;
+        console.log('Received body', body);
+
+        const { tokenIn, tokenOut, amountIn, walletAddress } = body;
 
         if (!tokenIn || !tokenOut || !amountIn || !walletAddress) {
             return NextResponse.json(
@@ -28,85 +27,43 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Create a provider using your custom or environment RPC
-        const provider = new ethers.providers.JsonRpcProvider({
-            url: RPC_URL as string,
-            headers: {
-                Referer: "",
-            },
-        });
-        // Force the network detection if needed
-        provider.detectNetwork = async () => ({ chainId: 1, name: "homestead" });
-
-        // Instantiate our tokens as sdk-core Token objects
-        const tokenInInstance = new Token(
-            tokenIn.chainId,
-            tokenIn.address,
-            tokenIn.decimals,
-            tokenIn.symbol,
-            tokenIn.name
-        );
-
-        const tokenOutInstance = new Token(
-            tokenOut.chainId,
-            tokenOut.address,
-            tokenOut.decimals,
-            tokenOut.symbol,
-            tokenOut.name
-        );
-
-        // Convert raw input amount into a CurrencyAmount
-        const amountInCurrency = CurrencyAmount.fromRawAmount(
-            tokenInInstance,
-            amountIn
-        );
-
-        // Build an AlphaRouter to compute best route (including multi-hop if needed).
-        const router = new AlphaRouter({
-            chainId: tokenInInstance.chainId,
-            provider,
+        const queryParams = new URLSearchParams({
+            tokenInAddress: tokenIn.address,
+            tokenInChainId: "1",
+            tokenOutAddress: tokenOut.address,
+            tokenOutChainId: "1",
+            amount: amountIn,
+            type: "exactIn",
         });
 
-        const deadline = Math.floor(Date.now() / 1000) + 1800; // e.g. 30 mins from now
-        const slippage = new Percent(50, 10000); // 0.50%
+        // Construct the full URL for the external /quote endpoint.
+        const url = `${SERVER_URL}/quote?${queryParams.toString()}`;
+        console.log("Forwarding request to:", url);
 
-        const options: SwapOptionsSwapRouter02 = {
-            recipient: walletAddress,
-            slippageTolerance: slippage,
-            deadline,
-            type: SwapType.SWAP_ROUTER_02
+        // Make the GET request to the external /quote endpoint.
+        const response = await fetch(url, { method: "GET" });
+        if (!response.ok) {
+            const text = await response.text();
+            console.error("Upstream /quote failed:", text);
+            return NextResponse.json(
+                { error: "Failed to fetch from /quote" },
+                { status: 502 }
+            );
+        }
+
+        const data = await response.json();
+
+        const humanReadableQuote = parseFloat(
+            ethers.utils.formatUnits(data.quote, tokenOut.decimals)
+        );
+        const formattedQuote = humanReadableQuote.toFixed(4);
+
+        const result = {
+            quote: formattedQuote,
+            route: data.route,
         };
-        const route = await router.route(
-            amountInCurrency,
-            tokenOutInstance,
-            TradeType.EXACT_INPUT,
-            options
-        );
 
-        if (!route) {
-            return NextResponse.json(
-                { error: "No valid multi-hop route found" },
-                { status: 400 }
-            );
-        }
-
-        // The route object contains a .quote field with the best output amount
-        const rawQuote = route.quote.toExact();
-        const bestQuote = parseFloat(rawQuote).toFixed(4);
-        console.log("Best quote (multi-hop if needed):", bestQuote);
-
-        if (!route?.methodParameters) {
-            return NextResponse.json(
-                { error: "No valid route with methodParameters found" },
-                { status: 400 }
-            );
-        }
-
-        // Return the best quoted output plus the route's methodParameters
-        return NextResponse.json({
-            quote: bestQuote,
-            route: route.methodParameters,
-        });
+        return NextResponse.json(result);
     } catch (error: any) {
         console.error("API swap error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
