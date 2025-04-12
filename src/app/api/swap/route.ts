@@ -3,19 +3,6 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { ethers } from 'ethers';
 
-const CORS_HEADERS = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
-export async function OPTIONS() {
-    return new NextResponse(null, {
-        status: 204, // No Content
-        headers: CORS_HEADERS,
-    });
-}
-
 export async function POST(req: NextRequest) {
     console.log('Request received', req);
     try {
@@ -24,10 +11,7 @@ export async function POST(req: NextRequest) {
         if (!SERVER_URL) {
             return NextResponse.json(
                 { error: "SERVER_URL environment variable is missing" },
-                {
-                    status: 500,
-                    headers: CORS_HEADERS,
-                }
+                { status: 500 }
             );
         }
 
@@ -39,10 +23,7 @@ export async function POST(req: NextRequest) {
         if (!tokenIn || !tokenOut || !amountIn || !walletAddress) {
             return NextResponse.json(
                 { error: "Missing required parameters" },
-                {
-                    status: 400,
-                    headers: CORS_HEADERS,
-                }
+                { status: 400 }
             );
         }
 
@@ -70,10 +51,7 @@ export async function POST(req: NextRequest) {
             console.error("Upstream /quote failed:", text);
             return NextResponse.json(
                 { error: "Failed to fetch from /quote" },
-                {
-                    status: 502,
-                    headers: CORS_HEADERS,
-                }
+                { status: 502 }
             );
         }
 
@@ -84,16 +62,12 @@ export async function POST(req: NextRequest) {
         );
         const formattedQuote = humanReadableQuote.toFixed(4);
 
-        return NextResponse.json(
-            {
-                quote: formattedQuote,
-                route: data.route,
-            },
-            {
-                status: 200,
-                headers: CORS_HEADERS,
-            }
-        );
+        const result = {
+            quote: formattedQuote,
+            route: data.route,
+        };
+
+        return NextResponse.json(result);
     } catch (error: any) {
         console.error("API swap error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
